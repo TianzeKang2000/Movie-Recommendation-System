@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+from pyspark.mllib.recommendation import ALS, Rating
 
 # Initialize Spark session
 spark = SparkSession.builder.appName("MovieRecommendation").getOrCreate()
@@ -19,12 +19,18 @@ model = ALS.train(ratings, rank, numIterations)
 users_products = ratings.map(lambda r: (r.user, r.product))
 predictions = model.predictAll(users_products).map(lambda r: (r.user, r.product, r.rating))
 
-# Collect and print predictions
-results = predictions.collect()
-for result in results:
-    print(f"User: {result[0]}, Product: {result[1]}, Rating: {result[2]}")
+# Convert predictions to DataFrame
+predictions_df = predictions.toDF(["user", "product", "rating"])
 
-# Save predictions to a text file in GCS
-predictions.saveAsTextFile("gs://movie_bucket_kang_1/predictions")
+# Show top N predictions
+top_n_predictions = predictions_df.orderBy(predictions_df['rating'].desc()).take(20)
+
+# Print the top N predictions
+print("Top 20 Predictions:")
+for prediction in top_n_predictions:
+    print(f"User: {prediction['user']}, Product: {prediction['product']}, Rating: {prediction['rating']}")
+
+# Optionally, save predictions as a single CSV file to GCS
+predictions_df.coalesce(1).write.mode("overwrite").option("header", "true").csv("gs://movie_bucket_kang_1/predictions/predictions.csv")
 
 spark.stop()
